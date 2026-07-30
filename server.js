@@ -15,6 +15,13 @@ app.use(cors());
 // const uri = process.env.MONGODB_URI;
 connectDB();
 
+app.get("/", (req, res) => {
+  res.status(200).json({
+    status: "ok",
+    message: "System is up and running",
+  });
+});
+
 app.use("/auth", authRoutes);
 app.use("/admin", adminRoutes);
 
