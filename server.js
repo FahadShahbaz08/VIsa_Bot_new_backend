@@ -1,4 +1,3 @@
-require("dotenv").config();
 const connectDB = require("./config/db");
 const app = require("./app");
 
@@ -13,4 +12,7 @@ if (require.main === module) {
     process.exitCode = 1;
   });
 }
-module.exports = { app, start };
+// Both recognized entry files export the request handler for serverless hosts.
+module.exports = app;
+module.exports.app = app;
+module.exports.start = start;

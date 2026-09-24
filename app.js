@@ -1,10 +1,24 @@
+require("dotenv").config();
 const express = require("express");
 const cors = require("cors");
+const connectDB = require("./config/db");
 const app = express();
 app.use(cors());
 app.use(express.json({ limit: "16kb" }));
-// Liveness endpoint. Startup does not listen until the database connects.
+// Liveness only: this can succeed while the database is unavailable.
 app.get("/", (req, res) => res.json({ status: "ok", message: "System is up and running" }));
+
+// Vercel imports this app directly, so database startup cannot rely on server.js.
+app.use(["/auth", "/admin"], async (req, res, next) => {
+  try {
+    await connectDB();
+    next();
+  } catch (error) {
+    console.error("Database unavailable:", error.code);
+    res.set("Cache-Control", "no-store");
+    res.status(503).json({ code: error.code, message: error.message });
+  }
+});
 app.use("/auth", require("./routes/auth.route"));
 app.use("/admin", require("./routes/admin.route"));
 app.use((err, req, res, next) => {

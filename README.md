@@ -15,7 +15,7 @@ Edit `.env` locally with your actual `MONGO_URI`, a strong `JWT_SECRET`, and `PO
 npm.cmd start
 ```
 
-The server connects to MongoDB before listening. Missing/invalid database configuration exits with a sanitized error. Logs only report whether the URI is configured; they never print it or the driver's raw connection error. `GET /` is a public liveness response (`status: ok`), not an ongoing database readiness probe.
+Local startup connects to MongoDB before listening. Serverless requests to /admin and /auth also await a shared, cached connection before querying, because Vercel can import app.js directly. Missing/invalid database configuration exits with a sanitized error. Logs only report whether the URI is configured; they never print it or the driver's raw connection error. `GET /` is a public liveness response (`status: ok`), not an ongoing database readiness probe.
 
 The separate frontend lives at `D:\Github Projects\Websites\Visa-Bot-Frontend`. Configure its public `VITE_API_BASE_URL` to point here; the user list loads automatically. To run both backends simultaneously, assign distinct ports. No frontend files belong in this repository.
 
@@ -44,4 +44,17 @@ npm.cmd test
 
 Tests use `mongodb-memory-server` to start a real temporary MongoDB process. They do not load `.env` or access your configured database. The first run needs internet access to download a MongoDB binary; later runs reuse its cache. Tests cover public health, CORS, key-free admin access, creation/validation, password hashing, duplicate races, response field safety, device-limit/login/reset behavior, deletion cleanup and retry, malformed JSON, and sanitized DB configuration logging.
 
-`app.js` exports Express without opening a database or port, enabling integration tests. `server.js` remains the production entry point. Existing user login behavior is otherwise preserved.
+`app.js` exports Express without opening a port. Database-backed requests initialize MongoDB on demand, including serverless cold starts. `server.js` remains the production entry point. Existing user login behavior is otherwise preserved.
+
+
+## Vercel deployment
+
+Vercel can import `app.js` as the Express entrypoint without executing the local `server.js` startup. Both entry files export the Express handler; `/admin` and `/auth` await MongoDB before running their route handlers. Concurrent cold requests share one connection attempt, warm requests reuse the connection, and failed attempts can retry. No admin key is required.
+
+Set `MONGO_URI` and `JWT_SECRET` in the backend Vercel project's environment variables for the environment being deployed, then redeploy. Local `.env` files are not deployed. Keep `MONGO_URI` out of the frontend. Confirm MongoDB network access permits the deployed backend to connect.
+
+`GET /` is liveness only. Verify database access with `GET /admin/users`. Missing database configuration returns 503 with `DATABASE_NOT_CONFIGURED`; connection failures return 503 with `DATABASE_UNAVAILABLE`, without exposing credentials. The frontend displays the returned explanation.
+
+The test suite includes imported-handler cold starts, concurrent first requests, warm connection reuse, failed-attempt recovery, reconnection, and safe error responses. These tests use an isolated MongoDB process.
+
+Reference: https://vercel.com/docs/frameworks/backend/express
