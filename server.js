@@ -1,31 +1,16 @@
-// server.js
 require("dotenv").config();
-const express = require("express");
-const bodyParser = require("body-parser");
 const connectDB = require("./config/db");
-const cors = require("cors");
+const app = require("./app");
 
-const authRoutes = require("./routes/auth.route");
-const adminRoutes = require("./routes/admin.route");
-
-const app = express();
-app.use(bodyParser.json());
-app.use(cors());
-
-// const uri = process.env.MONGODB_URI;
-connectDB();
-
-app.get("/", (req, res) => {
-  res.status(200).json({
-    status: "ok",
-    message: "System is up and running",
+async function start() {
+  await connectDB();
+  const port = process.env.PORT || 4000;
+  return app.listen(port, () => console.log("Server running on port", port));
+}
+if (require.main === module) {
+  start().catch((error) => {
+    console.error(error.message);
+    process.exitCode = 1;
   });
-});
-
-app.use("/auth", authRoutes);
-app.use("/admin", adminRoutes);
-
-const PORT = process.env.PORT || 4000;
-app.listen(PORT, () => {
-  console.log("Server running on port", PORT);
-});
+}
+module.exports = { app, start };
