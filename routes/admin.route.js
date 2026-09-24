@@ -94,6 +94,30 @@ const createUser = async (req, res) => {
 router.post("/users", createUser);
 router.post("/create-user", createUser);
 
+router.patch("/users/:id/device-limit", async (req, res) => {
+  try {
+    if (!mongoose.isObjectIdOrHexString(req.params.id)) {
+      return res.status(400).json({ message: "Invalid user ID" });
+    }
+    const count = req.body?.allowedDevicesCount;
+    if (!Number.isInteger(count) || count < 1 || count > 100) {
+      return res.status(400).json({ message: "Device limit must be an integer from 1 to 100" });
+    }
+    // Only change the limit; keep registered devices and other account fields.
+    const user = await User.findByIdAndUpdate(
+      req.params.id,
+      { $set: { allowedDevicesCount: count } },
+      { new: true, runValidators: true }
+    ).select("allowedDevicesCount");
+    if (!user) return res.status(404).json({ message: "User not found" });
+    res.json({ message: "Device limit updated", userId: user._id, allowedDevicesCount: user.allowedDevicesCount });
+  } catch {
+    console.error("Device limit update failed");
+    res.status(500).json({ message: "Unable to update device limit" });
+  }
+});
+
+
 router.post("/users/:id/reset-devices", async (req, res) => {
   try {
     if (!mongoose.isObjectIdOrHexString(req.params.id)) {

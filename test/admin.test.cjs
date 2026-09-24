@@ -83,3 +83,47 @@ test('malformed JSON gets a JSON error', async () => {
   const r = await fetch(base + '/admin/users', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{bad' });
   assert.equal(r.status, 400); assert.equal((await r.json()).message, 'Invalid JSON body');
 });
+
+test('device-limit update validates IDs, missing users, and integer bounds', async () => {
+  const validId = '000000000000000000000000';
+  for (const invalid of [undefined, null, true, '10', [], {}, 0, -1, 101, 1.5]) {
+    const data = invalid === undefined ? {} : { allowedDevicesCount: invalid };
+    assert.equal((await api(`/admin/users/${validId}/device-limit`, 'PATCH', data)).status, 400);
+  }
+  assert.equal((await api('/admin/users/abcdefghijkl/device-limit', 'PATCH', { allowedDevicesCount: 2 })).status, 400);
+  assert.equal((await api(`/admin/users/${validId}/device-limit`, 'PATCH', { allowedDevicesCount: 2 })).status, 404);
+});
+test('device limits increase and decrease without changing credentials or registrations', async () => {
+  const created = await api('/admin/users', 'POST', { ...body, username: 'limit-user', email: 'limits@example.com', allowedDevicesCount: 5 });
+  assert.equal(created.status, 201);
+  const userId = created.data.userId;
+  const original = await User.findById(userId);
+  const login = (macAddress) => api('/auth/login', 'POST', { usernameOrEmail: 'limit-user', password: body.password, macAddress });
+  for (let index = 1; index <= 5; index++) assert.equal((await login(`limit-device-${index}`)).status, 200);
+  assert.equal((await login('limit-device-6')).status, 403);
+  const raised = await api(`/admin/users/${userId}/device-limit`, 'PATCH', { allowedDevicesCount: 10, status: 'inactive', passwordHash: 'must-not-change' });
+  assert.equal(raised.status, 200); assert.equal(raised.data.allowedDevicesCount, 10);
+  assert.equal((await login('limit-device-6')).status, 200);
+  const lowered = await api(`/admin/users/${userId}/device-limit`, 'PATCH', { allowedDevicesCount: 2 });
+  assert.equal(lowered.status, 200); assert.equal(lowered.data.allowedDevicesCount, 2);
+  const saved = await User.findById(userId);
+  assert.equal(saved.allowedDevicesCount, 2); assert.equal(saved.passwordHash, original.passwordHash); assert.equal(saved.status, 'active');
+  assert.equal((await Devices.findOne({ userId })).devices.length, 6);
+  assert.equal((await login('limit-device-1')).status, 200);
+  assert.equal((await login('limit-device-7')).status, 403);
+  assert.equal((await api('/admin/add-device', 'POST', { userId, macAddress: 'limit-device-7' })).status, 403);
+  const listed = (await api('/admin/users')).data.users.find((user) => user.id === userId);
+  assert.equal(listed.allowedDevicesCount, 2); assert.equal(listed.devices.length, 6);
+  assert.equal((await api(`/admin/users/${userId}/reset-devices`, 'POST')).data.cleared, 6);
+  assert.equal((await login('fresh-1')).status, 200); assert.equal((await login('fresh-2')).status, 200); assert.equal((await login('fresh-3')).status, 403);
+  for (const count of [1, 100]) assert.equal((await api(`/admin/users/${userId}/device-limit`, 'PATCH', { allowedDevicesCount: count })).data.allowedDevicesCount, count);
+  await api(`/admin/users/${userId}`, 'DELETE');
+});
+test('device-limit update returns a safe error on database failure', async () => {
+  const original = User.findByIdAndUpdate;
+  User.findByIdAndUpdate = () => { throw new Error('private database detail'); };
+  try {
+    const response = await api('/admin/users/000000000000000000000000/device-limit', 'PATCH', { allowedDevicesCount: 2 });
+    assert.equal(response.status, 500); assert.equal(response.data.message, 'Unable to update device limit');
+  } finally { User.findByIdAndUpdate = original; }
+});

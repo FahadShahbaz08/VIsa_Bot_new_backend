@@ -27,6 +27,7 @@ Admin endpoints intentionally require no key or authentication. Anyone who can r
 | --- | --- | --- |
 | GET | `/admin/users` | `{ users: [{ id, username, email, allowedDevicesCount, status, createdAt, lastLoginAt, devices }] }`; no password hashes |
 | POST | `/admin/users` | Create with `{ username, email, password, allowedDevicesCount: 1, status: "active" }`; returns 201 and `userId` |
+| PATCH | `/admin/users/:id/device-limit` | Set `{ allowedDevicesCount: 10 }`; returns the saved limit; integers 1–100 |
 | POST | `/admin/users/:id/reset-devices` | Clear registrations; `cleared` is the number of devices removed |
 | DELETE | `/admin/users/:id` | Delete account, device records, and payment records |
 
@@ -58,3 +59,5 @@ Set `MONGO_URI` and `JWT_SECRET` in the backend Vercel project's environment var
 The test suite includes imported-handler cold starts, concurrent first requests, warm connection reuse, failed-attempt recovery, reconnection, and safe error responses. These tests use an isolated MongoDB process.
 
 Reference: https://vercel.com/docs/frameworks/backend/express
+
+Device limits can be increased or decreased at any time. Reducing below the current registered-device count preserves those registrations and their login access, but blocks new devices until the count is below the limit. Reset devices to clear all registrations when needed. The update only changes `allowedDevicesCount`; it does not change account status or credentials.
